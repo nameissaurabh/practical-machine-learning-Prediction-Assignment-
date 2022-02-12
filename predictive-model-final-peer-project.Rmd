@@ -1,0 +1,123 @@
+---
+title: "Practical-machine-learning Prediction Assignment"
+author: "Saurabh Ghadge"
+date: "12/02/2022"
+output: html_document
+---
+
+#### Problem Statement  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).  
+
+#### DATA  
+The training data for this project are available here:  
+[train](The training data for this project are available here: )  
+The test data are available here:  
+[test](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)  
+The data for this project come from this source: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har). If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.  
+
+#### GOAL  
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. 
+  
+*Reading Data*  
+```{r,cache=TRUE}
+library(tidyverse)
+library(caret)
+pmlval <- read_csv("pml-testing.csv")
+pmltrain <- read_csv("pml-training.csv")
+intrain <- createDataPartition(y = pmltrain$classe, p = 0.6, list = F)
+pmltrain <- pmltrain[intrain,]
+test <- pmltrain[-intrain,]
+```
+  
+Let's take a glance at data...  
+```{r,cache = TRUE}
+head(pmltrain)
+dim(pmltrain)
+any(is.na(pmltrain))
+sum(is.na(pmltrain))
+```
+  
+  Looking at above outcomes we see that their are some column which are not making that much sense so that they can take part in model building. We will drop those column, also we see that their is lot's of null values in the data.We will drop those column who contains more than 60% of missing values.  
+```{r,cache=TRUE}
+pmltrain <- subset(pmltrain[,-c(1:5)])
+na_col <- function(x) ! sum(is.na(x))/length(x) > 0.6
+pmltrain <- pmltrain %>% select(where(na_col))
+head(pmltrain)
+```
+
+  Before starting, we will drop those column which are multicollinear with other.That can arise multicollinearity problem later so dropping those column will be appropriate in preprocessing step.
+```{r,cache=TRUE}
+pmltrain_num <- pmltrain %>% select(where(is.numeric))#only numeric data
+correlation <- cor(pmltrain_num)#correlation
+diag(correlation) <- 0 #making diag entry zero as variable itself is perfectly correlated
+correlation[upper.tri(correlation)] <- 0 #making correlation matrix lower triangular
+any(abs(correlation) > 0.6)
+abs_thr <- function(datafrm , thr){    #function to get columns that are multicollinear
+        col = c()
+        for(i in 1:length(names(datafrm))){
+                for(j in 1:i){
+                        if (abs(datafrm[i,j]) > thr){
+                                col = c(col,names(datafrm[i,j]))
+                        }
+                }
+        }
+        return(unique(col))
+}
+dt <- data.frame(correlation)
+dt <- tibble(dt)
+abs_thr(dt,0.7)
+col <- abs_thr(dt,0.7)
+pmltrain <- pmltrain %>% select(-col) 
+head(pmltrain)
+```
+  
+  
+  Here,*classe* variable is categorical,and clearly it is problem of classification.We will try to build a different classification model.We will use model which will going to perform better on our testing set.We will continue to use this model to predict or to classify validation data.  
+  first of all we will use *Decision tree classifier* to predict the class.  
+  
+  
+```{r,cache=TRUE}
+pmltrain$new_window <- 1*(pmltrain$new_window == "yes")#one hot encode
+model <- train(classe~.,data = pmltrain,method = 'rpart')
+model
+test$new_window <- 1*(test$new_window == "yes")#one hot encode
+confusionMatrix(factor(test$classe),predict(model,test))
+```
+  
+  Here,Model is only generating 48% accuracy...which is not good.  
+  So we will now going to classify objects using Linear Discriminant Analysis.  
+```{r,cache = TRUE}
+model2 <- train(classe~.,data = pmltrain,method = "lda")
+confusionMatrix(factor(test$classe),predict(model2,test))
+```
+
+  
+  Accuracy is now increases as compared to the tree classifier, but not enough.So now, we are going to classify our objects using *naive bayes classifier*.  
+  
+```{r,cache=TRUE}
+model3 <- train(classe~.,data = pmltrain,method = "naive_bayes")
+confusionMatrix(factor(test$classe),predict(model3,test))
+```
+
+  Which is far good than other,generating about 76% accuracy.Also sensitivity (which is being right) is also far better for each class. This will going to be final model and we will use this to predict validation set.
+  Now we will train model using knn(k nearest neighbour) classifier.
+
+```{r,cache=TRUE}  
+model4 <- train(classe~.,data = pmltrain,method = "knn")
+confusionMatrix(factor(test$classe),predict(model4,test))
+```
+  
+  We got an extraordinary 94% of accuracy and all class sensitivity nearly close to 1 (probability of being right).This will going to be our final model and we will use this to predict validation set.
+  
+  
+```{r,cache=TRUE}
+pmlval$new_window <- 1*(pmlval$new_window == "yes")
+pred <- predict(model4,pmlval)
+```  
+```{r,cache=TRUE}
+pred
+```
+
+
+
+
